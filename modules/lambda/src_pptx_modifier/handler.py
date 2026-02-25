@@ -66,7 +66,9 @@ def replace_in_paragraph(paragraph, replacer) -> None:
     if not paragraph.runs:
         return
 
-    full_text = "".join(run.text for run in paragraph.runs)
+    full_text = "".join(run.text for run in paragraph.runs).strip()
+    if not full_text:
+        return
 
     if "{" not in full_text:
         return
@@ -74,9 +76,27 @@ def replace_in_paragraph(paragraph, replacer) -> None:
     new_text = replacer(full_text)
 
     if new_text != full_text:
+        print(f"Match found! Replacing text: '{full_text}' -> '{new_text}'")
         paragraph.runs[0].text = new_text
         for run in paragraph.runs[1:]:
             run.text = ""
+
+
+def process_shape(shape, replacer) -> None:
+    """Recursively process shapes, groups, and tables."""
+    if shape.has_text_frame:
+        for paragraph in shape.text_frame.paragraphs:
+            replace_in_paragraph(paragraph, replacer)
+    
+    elif shape.has_table:
+        for row in shape.table.rows:
+            for cell in row.cells:
+                for paragraph in cell.text_frame.paragraphs:
+                    replace_in_paragraph(paragraph, replacer)
+    
+    elif shape.shape_type == 6: # Group shape
+        for sub_shape in shape.shapes:
+            process_shape(sub_shape, replacer)
 
 
 def replace_in_presentation(prs: Presentation, replacements: dict) -> None:
@@ -85,12 +105,10 @@ def replace_in_presentation(prs: Presentation, replacements: dict) -> None:
 
     replacer = build_replacer(replacements)
 
-    for slide in prs.slides:
+    for i, slide in enumerate(prs.slides):
+        print(f"Processing slide {i+1}")
         for shape in slide.shapes:
-            if not shape.has_text_frame:
-                continue
-            for paragraph in shape.text_frame.paragraphs:
-                replace_in_paragraph(paragraph, replacer)
+            process_shape(shape, replacer)
 
 
 def modify_pptx(pptx_bytes: bytes, replacements: dict) -> bytes:
@@ -108,12 +126,18 @@ def modify_pptx(pptx_bytes: bytes, replacements: dict) -> bytes:
 
 def build_replacements(payload: dict) -> dict:
     data = payload["businessData"]
+    # Map both the intended and the found placeholders for maximum compatibility
     return {
-        "{{PAIN_POINT}}":      data["painPoint"],
-        "{{REVENUE}}":         f"${data['revenue']:,.0f}",
-        "{{ADJUSTED_TARGET}}": f"${round(data['revenue'] * 0.93):,.0f}",
-        "{{TECHNICIANS}}":     str(data["technicians"]),
-        "{{REPORTING_DATE}}":  data["reportingDate"],
+        "{{PAIN_POINT}}":      data.get("painPoint", ""),
+        "{{REVENUE}}":         f"${data.get('revenue', 0):,.0f}",
+        "{{ADJUSTED_TARGET}}": f"${round(data.get('revenue', 0) * 0.93):,.0f}",
+        "{{TECHNICIANS}}":     str(data.get("technicians", "")),
+        "{{REPORTING_DATE}}":  data.get("reportingDate", ""),
+        
+        # Placeholders found in the actual PPTX template (Slide 6)
+        "{{NAME}}":            data.get("painPoint", ""), # Mapping as an example
+        "{{BUSINESS_LINE}}":   f"Revenue: ${data.get('revenue', 0):,.0f}",
+        "{{PURPOSE}}":         f"Date: {data.get('reportingDate', '')}"
     }
 
 

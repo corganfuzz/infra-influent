@@ -30,6 +30,11 @@ data "archive_file" "zip" {
   output_path = "${path.root}/.terraform/lambda_builds/${var.function_name}.zip"
 }
 
+resource "aws_cloudwatch_log_group" "this" {
+  name              = "/aws/lambda/${aws_lambda_function.this.function_name}"
+  retention_in_days = 7
+}
+
 resource "aws_lambda_function" "this" {
   filename         = data.archive_file.zip.output_path
   function_name    = "${var.project_name}-${var.environment}-${var.function_name}"

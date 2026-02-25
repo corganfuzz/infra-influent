@@ -2,7 +2,7 @@ locals {
   # ==============================================
   # Project Settings
   # ==============================================
-  project_name = "mortgage-xpert"
+  project_name = "xpert"
   environment  = "prod"
   aws_region   = "us-east-1"
 

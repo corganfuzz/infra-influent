@@ -18,12 +18,3 @@ resource "aws_lambda_function" "this" {
     variables = var.environment_variables
   }
 }
-
-# Optional: Permission for Bedrock to invoke this Lambda (only if used as Agent Action Group)
-resource "aws_lambda_permission" "allow_bedrock" {
-  count         = try(var.lambda_config.allow_bedrock, false) ? 1 : 0
-  statement_id  = "AllowBedrockInvocation"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.this.function_name
-  principal     = "bedrock.amazonaws.com"
-}

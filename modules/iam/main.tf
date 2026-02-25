@@ -1,6 +1,5 @@
 data "aws_caller_identity" "current" {}
 
-# Generic Role Creation
 resource "aws_iam_role" "this" {
   for_each = var.iam_roles
   name     = "${var.project_name}-${var.environment}-${each.key}-role"

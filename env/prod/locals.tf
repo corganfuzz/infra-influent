@@ -26,7 +26,7 @@ locals {
   # ==============================================
   lambdas = {
     "pptx-modifier" = {
-      runtime     = "python3.11"
+      runtime     = "python3.13"
       handler     = "handler.lambda_handler"
       timeout     = 60
       memory_size = 512

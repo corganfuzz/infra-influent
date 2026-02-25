@@ -24,10 +24,13 @@ s3 = boto3.client("s3", region_name=AWS_REGION)
 # ---------------------------------------------------------------------------
 
 def list_templates(bucket: str) -> list[dict]:
+    print(f"Listing templates in bucket: {bucket}")
     response = s3.list_objects_v2(Bucket=bucket)
+    contents = response.get("Contents", [])
+    print(f"Found {len(contents)} objects in bucket.")
     return [
         {"fileName": obj["Key"], "size": obj["Size"], "lastModified": obj["LastModified"].isoformat()}
-        for obj in response.get("Contents", [])
+        for obj in contents
         if obj["Key"].endswith(".pptx")
     ]
 

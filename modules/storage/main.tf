@@ -1,6 +1,6 @@
 resource "aws_s3_bucket" "data_layers" {
   for_each = var.s3_buckets
-  bucket   = "${var.project_name}-${var.environment}-${each.key}-data-${data.aws_caller_identity.current.account_id}"
+  bucket   = "${var.project_name}-${var.environment}-${each.key}"
 
   force_destroy = var.environment == "dev" ? true : false
 }

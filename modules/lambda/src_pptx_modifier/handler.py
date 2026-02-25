@@ -126,18 +126,12 @@ def modify_pptx(pptx_bytes: bytes, replacements: dict) -> bytes:
 
 def build_replacements(payload: dict) -> dict:
     data = payload["businessData"]
-    # Map both the intended and the found placeholders for maximum compatibility
     return {
         "{{PAIN_POINT}}":      data.get("painPoint", ""),
         "{{REVENUE}}":         f"${data.get('revenue', 0):,.0f}",
         "{{ADJUSTED_TARGET}}": f"${round(data.get('revenue', 0) * 0.93):,.0f}",
         "{{TECHNICIANS}}":     str(data.get("technicians", "")),
         "{{REPORTING_DATE}}":  data.get("reportingDate", ""),
-        
-        # Placeholders found in the actual PPTX template (Slide 6)
-        "{{NAME}}":            data.get("painPoint", ""), # Mapping as an example
-        "{{BUSINESS_LINE}}":   f"Revenue: ${data.get('revenue', 0):,.0f}",
-        "{{PURPOSE}}":         f"Date: {data.get('reportingDate', '')}"
     }
 
 

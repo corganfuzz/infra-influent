@@ -3,7 +3,7 @@ resource "aws_apigatewayv2_api" "this" {
   protocol_type = "HTTP"
 
   cors_configuration {
-    allow_origins = ["https://*.sharepoint.com"]
+    allow_origins = var.cors_allowed_origins
     allow_methods = ["GET", "POST", "OPTIONS"]
     allow_headers = ["Content-Type", "X-Api-Key"]
   }

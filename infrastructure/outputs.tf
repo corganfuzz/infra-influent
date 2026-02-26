@@ -10,9 +10,3 @@ output "api_url" {
   description = "The Invoke URL for the API Gateway"
   value       = module.api_gateway["pptx-modifier"].api_url
 }
-
-output "api_key" {
-  description = "The API Key for authentication"
-  value       = module.api_gateway["pptx-modifier"].api_key
-  sensitive   = true
-}

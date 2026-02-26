@@ -1,96 +1,46 @@
-resource "aws_api_gateway_rest_api" "this" {
-  name        = "${var.project_name}-${var.environment}-api"
-  description = "API Gateway for brix-bot to interact with Bedrock Agent"
-}
+resource "aws_apigatewayv2_api" "this" {
+  name          = "${var.project_name}-${var.environment}-api"
+  protocol_type = "HTTP"
 
-resource "aws_api_gateway_resource" "proxy" {
-  rest_api_id = aws_api_gateway_rest_api.this.id
-  parent_id   = aws_api_gateway_rest_api.this.root_resource_id
-  path_part   = "{proxy+}"
-}
-
-resource "aws_api_gateway_method" "proxy" {
-  rest_api_id      = aws_api_gateway_rest_api.this.id
-  resource_id      = aws_api_gateway_resource.proxy.id
-  http_method      = "ANY"
-  authorization    = "NONE"
-  api_key_required = true
-}
-
-resource "aws_api_gateway_integration" "proxy" {
-  rest_api_id = aws_api_gateway_rest_api.this.id
-  resource_id = aws_api_gateway_resource.proxy.id
-  http_method = aws_api_gateway_method.proxy.http_method
-
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = var.lambda_invoke_arn
-}
-
-resource "aws_api_gateway_method" "root" {
-  rest_api_id      = aws_api_gateway_rest_api.this.id
-  resource_id      = aws_api_gateway_rest_api.this.root_resource_id
-  http_method      = "ANY"
-  authorization    = "NONE"
-  api_key_required = true
-}
-
-resource "aws_api_gateway_integration" "root" {
-  rest_api_id = aws_api_gateway_rest_api.this.id
-  resource_id = aws_api_gateway_rest_api.this.root_resource_id
-  http_method = aws_api_gateway_method.root.http_method
-
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = var.lambda_invoke_arn
-}
-
-resource "aws_api_gateway_deployment" "this" {
-  depends_on = [
-    aws_api_gateway_integration.proxy,
-    aws_api_gateway_integration.root
-  ]
-  rest_api_id = aws_api_gateway_rest_api.this.id
-
-  triggers = {
-    redeployment = sha1(jsonencode([
-      aws_api_gateway_resource.proxy.id,
-      aws_api_gateway_method.proxy.id,
-      aws_api_gateway_integration.proxy.id,
-      aws_api_gateway_method.root.id,
-      aws_api_gateway_integration.root.id,
-    ]))
-  }
-
-  lifecycle {
-    create_before_destroy = true
+  cors_configuration {
+    allow_origins = ["https://*.sharepoint.com"]
+    allow_methods = ["GET", "POST", "OPTIONS"]
+    allow_headers = ["Content-Type", "X-Api-Key"]
   }
 }
 
-resource "aws_api_gateway_stage" "this" {
-  deployment_id = aws_api_gateway_deployment.this.id
-  rest_api_id   = aws_api_gateway_rest_api.this.id
-  stage_name    = var.environment
+resource "aws_apigatewayv2_integration" "this" {
+  api_id                 = aws_apigatewayv2_api.this.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = var.lambda_invoke_arn
+  payload_format_version = "2.0"
 }
 
-# API Key and Usage Plan
-resource "aws_api_gateway_usage_plan" "this" {
-  name = "${var.project_name}-${var.environment}-usage-plan"
-
-  api_stages {
-    api_id = aws_api_gateway_rest_api.this.id
-    stage  = aws_api_gateway_stage.this.stage_name
-  }
+resource "aws_apigatewayv2_route" "get_templates" {
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "GET /templates"
+  target             = "integrations/${aws_apigatewayv2_integration.this.id}"
+  authorization_type = "NONE"
 }
 
-resource "aws_api_gateway_api_key" "this" {
-  name = "${var.project_name}-${var.environment}-api-key"
+resource "aws_apigatewayv2_route" "post_modify" {
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "POST /modify"
+  target             = "integrations/${aws_apigatewayv2_integration.this.id}"
+  authorization_type = "NONE"
 }
 
-resource "aws_api_gateway_usage_plan_key" "this" {
-  key_id        = aws_api_gateway_api_key.this.id
-  key_type      = "API_KEY"
-  usage_plan_id = aws_api_gateway_usage_plan.this.id
+resource "aws_apigatewayv2_route" "get_download" {
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "GET /download"
+  target             = "integrations/${aws_apigatewayv2_integration.this.id}"
+  authorization_type = "NONE"
+}
+
+resource "aws_apigatewayv2_stage" "this" {
+  api_id      = aws_apigatewayv2_api.this.id
+  name        = var.environment
+  auto_deploy = true
 }
 
 resource "aws_lambda_permission" "allow_apigw" {
@@ -98,6 +48,5 @@ resource "aws_lambda_permission" "allow_apigw" {
   action        = "lambda:InvokeFunction"
   function_name = var.lambda_function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.this.execution_arn}/*/*"
+  source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
 }
-

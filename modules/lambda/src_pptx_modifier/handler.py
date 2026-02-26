@@ -1,16 +1,23 @@
 """
 EndPoints:
-GET  /templates: lists available .pptx templates from SOURCE_BUCKET
-POST /modify: replaces tokens in a template and saves to OUTPUT_BUCKET
+GET  /templates  → lists available .pptx templates from SOURCE_BUCKET
+POST /modify     → replaces tokens in a template and saves to OUTPUT_BUCKET
+GET  /download   → returns a presigned URL for a processed file
 """
 
 import io
 import json
+import logging
 import os
 import re
+
 import boto3
+from botocore.exceptions import ClientError
 from pptx import Presentation
 
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 SOURCE_BUCKET = os.environ["UNTOUCHED_BUCKET"]
 OUTPUT_BUCKET = os.environ["PROCESSED_BUCKET"]
@@ -24,20 +31,20 @@ s3 = boto3.client("s3", region_name=AWS_REGION)
 # ---------------------------------------------------------------------------
 
 def list_templates(bucket: str) -> list[dict]:
-    print(f"Listing templates in bucket: {bucket}")
     response = s3.list_objects_v2(Bucket=bucket)
-    contents = response.get("Contents", [])
-    print(f"Found {len(contents)} objects in bucket.")
     return [
-        {"fileName": obj["Key"], "size": obj["Size"], "lastModified": obj["LastModified"].isoformat()}
-        for obj in contents
+        {
+            "fileName":    obj["Key"],
+            "size":        obj["Size"],
+            "lastModified": obj["LastModified"].isoformat(),
+        }
+        for obj in response.get("Contents", [])
         if obj["Key"].endswith(".pptx")
     ]
 
 
 def download_pptx(bucket: str, key: str) -> bytes:
-    response = s3.get_object(Bucket=bucket, Key=key)
-    return response["Body"].read()
+    return s3.get_object(Bucket=bucket, Key=key)["Body"].read()
 
 
 def upload_pptx(bucket: str, key: str, data: bytes) -> None:
@@ -51,6 +58,14 @@ def upload_pptx(bucket: str, key: str, data: bytes) -> None:
 
 def build_output_key(original_key: str) -> str:
     return original_key.replace(".pptx", "_modified.pptx")
+
+
+def generate_presigned_url(bucket: str, key: str, expiration: int = 3600) -> str:
+    return s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": bucket, "Key": key},
+        ExpiresIn=expiration,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -67,34 +82,30 @@ def replace_in_paragraph(paragraph, replacer) -> None:
         return
 
     full_text = "".join(run.text for run in paragraph.runs).strip()
-    if not full_text:
-        return
 
-    if "{" not in full_text:
+    if not full_text or "{" not in full_text:
         return
 
     new_text = replacer(full_text)
 
     if new_text != full_text:
-        print(f"Match found! Replacing text: '{full_text}' -> '{new_text}'")
         paragraph.runs[0].text = new_text
         for run in paragraph.runs[1:]:
             run.text = ""
 
 
 def process_shape(shape, replacer) -> None:
-    """Recursively process shapes, groups, and tables."""
     if shape.has_text_frame:
         for paragraph in shape.text_frame.paragraphs:
             replace_in_paragraph(paragraph, replacer)
-    
+
     elif shape.has_table:
         for row in shape.table.rows:
             for cell in row.cells:
                 for paragraph in cell.text_frame.paragraphs:
                     replace_in_paragraph(paragraph, replacer)
-    
-    elif shape.shape_type == 6: # Group shape
+
+    elif shape.shape_type == 6:  # MSO_SHAPE_TYPE.GROUP
         for sub_shape in shape.shapes:
             process_shape(sub_shape, replacer)
 
@@ -105,14 +116,13 @@ def replace_in_presentation(prs: Presentation, replacements: dict) -> None:
 
     replacer = build_replacer(replacements)
 
-    for i, slide in enumerate(prs.slides):
-        print(f"Processing slide {i+1}")
+    for slide in prs.slides:
         for shape in slide.shapes:
             process_shape(shape, replacer)
 
 
 def modify_pptx(pptx_bytes: bytes, replacements: dict) -> bytes:
-    prs    = Presentation(io.BytesIO(pptx_bytes))
+    prs = Presentation(io.BytesIO(pptx_bytes))
     replace_in_presentation(prs, replacements)
     buffer = io.BytesIO()
     prs.save(buffer)
@@ -159,9 +169,9 @@ def validate_modify(payload: dict) -> str | None:
 
 def handle_list_templates() -> dict:
     try:
-        templates = list_templates(SOURCE_BUCKET)
-        return success(templates)
+        return success(list_templates(SOURCE_BUCKET))
     except Exception as e:
+        logger.exception("Failed to list templates")
         return error(500, str(e))
 
 
@@ -180,11 +190,31 @@ def handle_modify_pptx(payload: dict) -> dict:
 
         upload_pptx(OUTPUT_BUCKET, output_key, modified)
 
+        logger.info("Modified '%s' → '%s'", file_name, output_key)
         return success({"outputKey": output_key})
 
-    except s3.exceptions.NoSuchKey:
-        return error(404, f"Template '{file_name}' not found.")
-    except Exception as e:
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "NoSuchKey":
+            return error(404, f"Template '{file_name}' not found.")
+        logger.exception("S3 error during modify")
+        return error(500, str(e))
+
+
+def handle_download(params: dict) -> dict:
+    file_name = params.get("fileName")
+
+    if not file_name:
+        return error(400, "Missing 'fileName' query parameter.")
+
+    try:
+        s3.head_object(Bucket=OUTPUT_BUCKET, Key=file_name)
+        url = generate_presigned_url(OUTPUT_BUCKET, file_name)
+        return success({"downloadUrl": url})
+
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "404":
+            return error(404, f"File '{file_name}' not found.")
+        logger.exception("S3 error during download")
         return error(500, str(e))
 
 
@@ -202,40 +232,10 @@ def success(data) -> dict:
 
 def error(status_code: int, message: str) -> dict:
     return {
-        "statusCode": status_code,
-        "headers":    {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
-        "body":       json.dumps({"error": message}),
+        "statusCode":  status_code,
+        "headers":     {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+        "body":        json.dumps({"error": message}),
     }
-
-
-def generate_presigned_url(bucket: str, key: str, expiration: int = 3600) -> str:
-    """Generate a presigned URL to share an S3 object."""
-    return s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": bucket, "Key": key},
-        ExpiresIn=expiration
-    )
-
-
-def handle_download(params: dict) -> dict:
-    file_name = params.get("fileName")
-    print(f"Download requested for fileName: '{file_name}'")
-    
-    if not file_name:
-        return error(400, "Missing 'fileName' parameter.")
-    
-    try:
-        # Check if object exists first
-        s3.head_object(Bucket=OUTPUT_BUCKET, Key=file_name)
-        
-        url = generate_presigned_url(OUTPUT_BUCKET, file_name)
-        return success({"downloadUrl": url})
-    except s3.exceptions.ClientError as e:
-        if e.response["Error"]["Code"] == "404":
-            return error(404, f"File '{file_name}' not found in processed bucket.")
-        return error(500, str(e))
-    except Exception as e:
-        return error(500, str(e))
 
 
 # ---------------------------------------------------------------------------
@@ -243,16 +243,12 @@ def handle_download(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def lambda_handler(event, context):
-    path   = event.get("path", "")
-    method = event.get("httpMethod", "")
-    
-    # Normalize path
-    path = "/" + path.strip("/")
-    route = f"{method} {path}"
-    
-    body    = event.get("body", "{}")
-    payload = json.loads(body) if isinstance(body, str) else body
+    route        = event.get("routeKey", "")
+    body         = event.get("body", "{}")
+    payload      = json.loads(body) if isinstance(body, str) else body
     query_params = event.get("queryStringParameters") or {}
+
+    logger.info("Route: %s", route)
 
     if route == "GET /templates":
         return handle_list_templates()

@@ -208,6 +208,27 @@ def error(status_code: int, message: str) -> dict:
     }
 
 
+def generate_presigned_url(bucket: str, key: str, expiration: int = 3600) -> str:
+    """Generate a presigned URL to share an S3 object."""
+    return s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": bucket, "Key": key},
+        ExpiresIn=expiration
+    )
+
+
+def handle_download(params: dict) -> dict:
+    file_name = params.get("fileName")
+    if not file_name:
+        return error(400, "Missing 'fileName' parameter.")
+    
+    try:
+        url = generate_presigned_url(OUTPUT_BUCKET, file_name)
+        return success({"downloadUrl": url})
+    except Exception as e:
+        return error(500, str(e))
+
+
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
@@ -216,19 +237,21 @@ def lambda_handler(event, context):
     path   = event.get("path", "")
     method = event.get("httpMethod", "")
     
-    # Normalize path by removing the stage if it's there, but standard proxy+ usually 
-    # gives the path matched. The handler expects routes like "GET /templates".
-    # We'll just strip trailing slashes and ensure a leading slash.
+    # Normalize path
     path = "/" + path.strip("/")
     route = f"{method} {path}"
     
     body    = event.get("body", "{}")
     payload = json.loads(body) if isinstance(body, str) else body
+    query_params = event.get("queryStringParameters") or {}
 
     if route == "GET /templates":
         return handle_list_templates()
 
     if route == "POST /modify":
         return handle_modify_pptx(payload)
+
+    if route == "GET /download":
+        return handle_download(query_params)
 
     return error(404, f"Unknown route: {route}")

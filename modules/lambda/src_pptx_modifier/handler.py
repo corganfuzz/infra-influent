@@ -219,12 +219,21 @@ def generate_presigned_url(bucket: str, key: str, expiration: int = 3600) -> str
 
 def handle_download(params: dict) -> dict:
     file_name = params.get("fileName")
+    print(f"Download requested for fileName: '{file_name}'")
+    
     if not file_name:
         return error(400, "Missing 'fileName' parameter.")
     
     try:
+        # Check if object exists first
+        s3.head_object(Bucket=OUTPUT_BUCKET, Key=file_name)
+        
         url = generate_presigned_url(OUTPUT_BUCKET, file_name)
         return success({"downloadUrl": url})
+    except s3.exceptions.ClientError as e:
+        if e.response["Error"]["Code"] == "404":
+            return error(404, f"File '{file_name}' not found in processed bucket.")
+        return error(500, str(e))
     except Exception as e:
         return error(500, str(e))
 

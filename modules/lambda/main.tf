@@ -1,30 +1,30 @@
 resource "null_resource" "install_dependencies" {
   triggers = {
     handler_hash      = filemd5("${var.source_dir}/handler.py")
+    s3_hash           = filemd5("${var.source_dir}/s3.py")
+    pptx_hash         = filemd5("${var.source_dir}/pptx_utils.py")
+    models_hash       = filemd5("${var.source_dir}/models.py")
     requirements_hash = filemd5("${var.source_dir}/requirements.txt")
   }
 
   provisioner "local-exec" {
     command = <<EOT
-      rm -rf /tmp/${var.function_name}_build
-      mkdir -p /tmp/${var.function_name}_build
+    rm -rf /tmp/${var.function_name}_build
+    mkdir -p /tmp/${var.function_name}_build
 
-      # copy only your source files
-      cp ${var.source_dir}/handler.py /tmp/${var.function_name}_build/
-      cp ${var.source_dir}/requirements.txt /tmp/${var.function_name}_build/
+    cp ${var.source_dir}/handler.py  /tmp/${var.function_name}_build/
+    cp ${var.source_dir}/s3.py       /tmp/${var.function_name}_build/
+    cp ${var.source_dir}/pptx_utils.py /tmp/${var.function_name}_build/
+    cp ${var.source_dir}/models.py   /tmp/${var.function_name}_build/
+    cp ${var.source_dir}/requirements.txt /tmp/${var.function_name}_build/
 
-      # install deps into the temp dir, pinned to python 3.13 for Lambda
-      # force linux platform wheels for C-extensions (like lxml) using pip
-      python3 -m pip install \
-        --target /tmp/${var.function_name}_build \
-        --platform manylinux2014_x86_64 \
-        --implementation cp \
-        --python-version 3.13 \
-        --only-binary=:all: \
-        --upgrade \
-        -r ${var.source_dir}/requirements.txt \
-        --quiet
-    EOT
+    uv pip install \
+      -r ${var.source_dir}/requirements.txt \
+      --target /tmp/${var.function_name}_build \
+      --python-version 3.13 \
+      --no-cache \
+      --quiet
+  EOT
   }
 }
 

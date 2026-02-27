@@ -14,9 +14,10 @@ terraform {
 module "storage" {
   source = "../modules/storage"
 
-  project_name = var.project_name
-  environment  = var.environment
-  s3_buckets   = var.s3_buckets
+  project_name  = var.project_name
+  environment   = var.environment
+  s3_buckets    = var.s3_buckets
+  templates_dir = "${path.module}/../pptx-docs"
 }
 
 module "iam" {

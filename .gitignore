@@ -19,3 +19,6 @@ tfplan
 
 # OS files
 .DS_Store
+
+# pptx docs
+pptx-docs/

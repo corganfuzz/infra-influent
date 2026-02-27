@@ -33,5 +33,13 @@ resource "aws_s3_bucket_public_access_block" "data_layers" {
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
+resource "aws_s3_object" "templates" {
+  for_each = var.templates_dir != "" ? fileset(var.templates_dir, "*.pptx") : []
 
-data "aws_caller_identity" "current" {}
+  bucket = aws_s3_bucket.data_layers["untoched-pptx"].id
+  key    = each.value
+  source = "${var.templates_dir}/${each.value}"
+  etag   = filemd5("${var.templates_dir}/${each.value}")
+
+  content_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+}

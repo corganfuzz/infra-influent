@@ -5,3 +5,8 @@ variable "s3_buckets" {
     versioning = bool
   }))
 }
+variable "templates_dir" {
+  type        = string
+  description = "Path to the directory containing PPTX templates to upload"
+  default     = ""
+}

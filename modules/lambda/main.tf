@@ -14,10 +14,15 @@ resource "null_resource" "install_dependencies" {
       cp ${var.source_dir}/requirements.txt /tmp/${var.function_name}_build/
 
       # install deps into the temp dir, pinned to python 3.13 for Lambda
-      uv pip install -r ${var.source_dir}/requirements.txt \
+      # force linux platform wheels for C-extensions (like lxml) using pip
+      python3 -m pip install \
         --target /tmp/${var.function_name}_build \
+        --platform manylinux2014_x86_64 \
+        --implementation cp \
         --python-version 3.13 \
-        --no-cache \
+        --only-binary=:all: \
+        --upgrade \
+        -r ${var.source_dir}/requirements.txt \
         --quiet
     EOT
   }

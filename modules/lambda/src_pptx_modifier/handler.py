@@ -224,17 +224,29 @@ def handle_download(params: dict) -> dict:
 
 def success(data) -> dict:
     return {
+        "isBase64Encoded": False,
         "statusCode": 200,
-        "headers":    {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
-        "body":       json.dumps(data),
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Content-Type,X-Api-Key",
+            "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
+        },
+        "body": json.dumps(data),
     }
 
 
 def error(status_code: int, message: str) -> dict:
     return {
-        "statusCode":  status_code,
-        "headers":     {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
-        "body":        json.dumps({"error": message}),
+        "isBase64Encoded": False,
+        "statusCode": status_code,
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Content-Type,X-Api-Key",
+            "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
+        },
+        "body": json.dumps({"error": message}),
     }
 
 
@@ -243,12 +255,35 @@ def error(status_code: int, message: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def lambda_handler(event, context):
-    route        = event.get("routeKey", "")
-    body         = event.get("body", "{}")
-    payload      = json.loads(body) if isinstance(body, str) else body
+    # Log the incoming event for debugging
+    logger.info("Received event: %s", json.dumps(event))
+
+    # Normalize route identification for both API Gateway v1 (REST) and v2 (HTTP)
+    http_method = event.get("httpMethod")
+    resource = event.get("resource")
+    
+    if http_method and resource:
+        # REST API (v1) format
+        route = f"{http_method} {resource}"
+    else:
+        # HTTP API (v2) format
+        route = event.get("routeKey", "")
+
+    # Handle body safely (APIGW v1 can send None for GET requests)
+    body = event.get("body")
+    if body is None:
+        payload = {}
+    elif isinstance(body, str):
+        try:
+            payload = json.loads(body) if body.strip() else {}
+        except json.JSONDecodeError:
+            payload = {}
+    else:
+        payload = body
+
     query_params = event.get("queryStringParameters") or {}
 
-    logger.info("Route: %s", route)
+    logger.info("Route detected: %s", route)
 
     if route == "GET /templates":
         return handle_list_templates()

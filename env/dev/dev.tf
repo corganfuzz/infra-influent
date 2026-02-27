@@ -8,8 +8,4 @@ module "infrastructure" {
   iam_roles    = local.iam_roles
   lambdas      = local.lambdas
   api_gateways = local.api_gateways
-
-  providers = {
-    aws = aws
-  }
 }

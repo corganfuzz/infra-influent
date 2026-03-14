@@ -12,6 +12,10 @@ terraform {
     archive = {
       source = "hashicorp/archive"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
   backend "s3" {
     bucket = "xpert-tfstate-446311000231"

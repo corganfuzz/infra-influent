@@ -1,5 +1,6 @@
 import os
 import boto3
+from typing import Generator
 
 
 s3 = boto3.client(
@@ -27,6 +28,10 @@ def list_templates() -> list[dict]:
 
 def download_pptx(key: str) -> bytes:
     return s3.get_object(Bucket=SOURCE_BUCKET, Key=key)["Body"].read()
+
+def stream_pptx(key: str) -> Generator[bytes, None, None]:
+    response = s3.get_object(Bucket=SOURCE_BUCKET, Key=key)
+    yield from response["Body"].iter_chunks(chunk_size=65536)
 
 
 def upload_pptx(key: str, data: bytes) -> None:

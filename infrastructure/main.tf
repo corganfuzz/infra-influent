@@ -16,6 +16,13 @@ module "iam" {
   storage_bucket_arns = module.storage.bucket_arns
 }
 
+module "ssm" {
+  source = "../modules/ssm"
+
+  project_name = var.project_name
+  environment  = var.environment
+}
+
 module "lambda" {
   for_each = var.lambdas
   source   = "../modules/lambda"
@@ -34,9 +41,14 @@ module "lambda" {
     memory_size = each.value.memory_size
   }
 
-  environment_variables = {
-    for k, v in each.value.env_vars : k => module.storage.bucket_names[v]
-  }
+  environment_variables = merge(
+    {
+      for k, v in each.value.env_vars : k => module.storage.bucket_names[v]
+    },
+    {
+      PREVIEW_TOKEN_SECRET = module.ssm.preview_token_secret
+    }
+  )
 }
 
 module "api_gateway" {

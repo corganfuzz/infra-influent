@@ -2,8 +2,10 @@ import logging
 import json
 from botocore.exceptions import ClientError
 from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
+from token_utils import mint_token, verify_token
 
 import s3
 import pptx_utils as pptx_lib
@@ -22,32 +24,44 @@ app.add_middleware(
     allow_headers=["Content-Type", "X-Api-Key"],
 )
 
+PPTX_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+)
+
 
 @app.get("/templates")
 def get_templates():
     logger.info("Listing templates")
-    data = s3.list_templates()
-    return Response(content=json.dumps(data), media_type="application/json")
+    templates = s3.list_templates()
+
+    for template in templates:
+        template["token"] = mint_token(template["fileName"])
+
+    return Response(content=json.dumps(templates), media_type="application/json")
 
 
 @app.post("/modify")
 def post_modify(request: ModifyRequest):
-    file_name    = request.template.fileName
+    file_name = request.template.fileName
     replacements = pptx_lib.build_replacements(request.businessData)
 
     try:
         pptx_bytes = s3.download_pptx(file_name)
-        modified   = pptx_lib.modify_pptx(pptx_bytes, replacements)
+        modified = pptx_lib.modify_pptx(pptx_bytes, replacements)
         output_key = s3.build_output_key(file_name)
 
         s3.upload_pptx(output_key, modified)
         logger.info(f"Modified PPTX uploaded: {output_key}")
 
-        return Response(content=json.dumps({"outputKey": output_key}), media_type="application/json")
+        return Response(
+            content=json.dumps({"outputKey": output_key}), media_type="application/json"
+        )
 
     except ClientError as e:
         if e.response["Error"]["Code"] == "NoSuchKey":
-            raise HTTPException(status_code=404, detail=f"Template '{file_name}' not found.")
+            raise HTTPException(
+                status_code=404, detail=f"Template '{file_name}' not found."
+            )
         raise
 
 
@@ -59,6 +73,29 @@ def get_download(fileName: str = Query(...)):
 
     data = {"downloadUrl": s3.presigned_url(fileName)}
     return Response(content=json.dumps(data), media_type="application/json")
+
+
+@app.get("/preview")
+def get_preview(token: str = Query(...)):
+    file_name = verify_token(token)
+
+    logger.info(f"Previewing PPTX: {file_name}")
+
+    try:
+        return StreamingResponse(
+            s3.stream_pptx(file_name),
+            media_type=PPTX_CONTENT_TYPE,
+            headers={
+                "Content-Disposition": f'inline; filename="{file_name.split("/")[-1]}"',
+                "Cache-Control": "private, max-age=300",
+            },
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "NoSuchKey":
+            raise HTTPException(
+                status_code=404, detail=f"File '{file_name}' not found."
+            )
+        raise
 
 
 lambda_handler = Mangum(app, lifespan="off")

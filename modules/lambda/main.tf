@@ -4,6 +4,7 @@ resource "null_resource" "install_dependencies" {
     s3_hash           = filemd5("${var.source_dir}/s3.py")
     pptx_hash         = filemd5("${var.source_dir}/pptx_utils.py")
     models_hash       = filemd5("${var.source_dir}/models.py")
+    token_hash        = filemd5("${var.source_dir}/token_utils.py")
     requirements_hash = filemd5("${var.source_dir}/requirements.txt")
   }
 
@@ -16,6 +17,7 @@ resource "null_resource" "install_dependencies" {
     cp ${var.source_dir}/s3.py       /tmp/${var.function_name}_build/
     cp ${var.source_dir}/pptx_utils.py /tmp/${var.function_name}_build/
     cp ${var.source_dir}/models.py   /tmp/${var.function_name}_build/
+    cp ${var.source_dir}/token_utils.py /tmp/${var.function_name}_build/
     cp ${var.source_dir}/requirements.txt /tmp/${var.function_name}_build/
 
     uv pip install \

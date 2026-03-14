@@ -3,6 +3,10 @@
 ###############################################################################
 resource "aws_api_gateway_rest_api" "this" {
   name = "${var.project_name}-${var.environment}-api"
+  binary_media_types = [
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/octet-stream"
+  ]
 }
 
 # ── Resources (paths) ───────────────────────────────────────────────────────
@@ -22,6 +26,12 @@ resource "aws_api_gateway_resource" "download" {
   rest_api_id = aws_api_gateway_rest_api.this.id
   parent_id   = aws_api_gateway_rest_api.this.root_resource_id
   path_part   = "download"
+}
+
+resource "aws_api_gateway_resource" "preview" {
+  rest_api_id = aws_api_gateway_rest_api.this.id
+  parent_id   = aws_api_gateway_rest_api.this.root_resource_id
+  path_part   = "preview"
 }
 
 # ── Methods (API key required) ──────────────────────────────────────────────
@@ -47,6 +57,14 @@ resource "aws_api_gateway_method" "get_download" {
   http_method      = "GET"
   authorization    = "NONE"
   api_key_required = true
+}
+
+resource "aws_api_gateway_method" "get_preview" {
+  rest_api_id      = aws_api_gateway_rest_api.this.id
+  resource_id      = aws_api_gateway_resource.preview.id
+  http_method      = "GET"
+  authorization    = "NONE"
+  api_key_required = false
 }
 
 # ── Lambda Proxy Integrations ──────────────────────────────────────────────
@@ -77,12 +95,23 @@ resource "aws_api_gateway_integration" "get_download" {
   uri                     = var.lambda_invoke_arn
 }
 
+resource "aws_api_gateway_integration" "get_preview" {
+  rest_api_id             = aws_api_gateway_rest_api.this.id
+  resource_id             = aws_api_gateway_resource.preview.id
+  http_method             = aws_api_gateway_method.get_preview.http_method
+  type                    = "AWS_PROXY"
+  integration_http_method = "POST"
+  uri                     = var.lambda_invoke_arn
+  content_handling        = "CONVERT_TO_BINARY"
+}
+
 # ── CORS (OPTIONS methods) ─────────────────────────────────────────────────
 locals {
   cors_resources = {
     templates = aws_api_gateway_resource.templates.id
     modify    = aws_api_gateway_resource.modify.id
     download  = aws_api_gateway_resource.download.id
+    preview   = aws_api_gateway_resource.preview.id
   }
 }
 
@@ -147,12 +176,15 @@ resource "aws_api_gateway_deployment" "this" {
       aws_api_gateway_resource.templates,
       aws_api_gateway_resource.modify,
       aws_api_gateway_resource.download,
+      aws_api_gateway_resource.preview,
       aws_api_gateway_method.get_templates,
       aws_api_gateway_method.post_modify,
       aws_api_gateway_method.get_download,
+      aws_api_gateway_method.get_preview,
       aws_api_gateway_integration.get_templates,
       aws_api_gateway_integration.post_modify,
       aws_api_gateway_integration.get_download,
+      aws_api_gateway_integration.get_preview,
       aws_api_gateway_method.options,
       aws_api_gateway_integration.options,
     ]))
@@ -198,3 +230,4 @@ resource "aws_lambda_permission" "allow_apigw" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.this.execution_arn}/*/*"
 }
+

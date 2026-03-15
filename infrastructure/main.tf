@@ -60,4 +60,5 @@ module "api_gateway" {
   lambda_invoke_arn    = module.lambda[each.value.lambda_key].invoke_arn
   lambda_function_name = module.lambda[each.value.lambda_key].function_name
   cors_allowed_origins = try(each.value.cors_allowed_origins, ["*"])
+  frontend_env_path    = try(each.value.frontend_env_path, null)
 }

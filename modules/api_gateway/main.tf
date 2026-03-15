@@ -3,10 +3,6 @@
 ###############################################################################
 resource "aws_api_gateway_rest_api" "this" {
   name = "${var.project_name}-${var.environment}-api"
-  binary_media_types = [
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    "application/octet-stream"
-  ]
 }
 
 # ── Resources (paths) ───────────────────────────────────────────────────────
@@ -67,6 +63,14 @@ resource "aws_api_gateway_method" "get_preview" {
   api_key_required = false
 }
 
+resource "aws_api_gateway_method" "head_preview" {
+  rest_api_id      = aws_api_gateway_rest_api.this.id
+  resource_id      = aws_api_gateway_resource.preview.id
+  http_method      = "HEAD"
+  authorization    = "NONE"
+  api_key_required = false
+}
+
 # ── Lambda Proxy Integrations ──────────────────────────────────────────────
 resource "aws_api_gateway_integration" "get_templates" {
   rest_api_id             = aws_api_gateway_rest_api.this.id
@@ -102,7 +106,15 @@ resource "aws_api_gateway_integration" "get_preview" {
   type                    = "AWS_PROXY"
   integration_http_method = "POST"
   uri                     = var.lambda_invoke_arn
-  content_handling        = "CONVERT_TO_BINARY"
+}
+
+resource "aws_api_gateway_integration" "head_preview" {
+  rest_api_id             = aws_api_gateway_rest_api.this.id
+  resource_id             = aws_api_gateway_resource.preview.id
+  http_method             = aws_api_gateway_method.head_preview.http_method
+  type                    = "AWS_PROXY"
+  integration_http_method = "POST"
+  uri                     = var.lambda_invoke_arn
 }
 
 # ── CORS (OPTIONS methods) ─────────────────────────────────────────────────
@@ -162,7 +174,7 @@ resource "aws_api_gateway_integration_response" "options" {
 
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Api-Key'"
-    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS,HEAD'"
     "method.response.header.Access-Control-Allow-Origin"  = "'${var.cors_allowed_origins[0]}'"
   }
 }
@@ -181,10 +193,12 @@ resource "aws_api_gateway_deployment" "this" {
       aws_api_gateway_method.post_modify,
       aws_api_gateway_method.get_download,
       aws_api_gateway_method.get_preview,
+      aws_api_gateway_method.head_preview,
       aws_api_gateway_integration.get_templates,
       aws_api_gateway_integration.post_modify,
       aws_api_gateway_integration.get_download,
       aws_api_gateway_integration.get_preview,
+      aws_api_gateway_integration.head_preview,
       aws_api_gateway_method.options,
       aws_api_gateway_integration.options,
     ]))
@@ -229,5 +243,18 @@ resource "aws_lambda_permission" "allow_apigw" {
   function_name = var.lambda_function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.this.execution_arn}/*/*"
+}
+
+resource "local_file" "frontend_env" {
+  count    = var.frontend_env_path != null ? 1 : 0
+  filename = var.frontend_env_path
+  content  = <<-EOT
+    VITE_LAMBDA_URL=${aws_api_gateway_stage.this.invoke_url}
+    VITE_TEMPLATES_API_KEY=${aws_api_gateway_api_key.this.value}
+    VITE_TEMPLATES_API_URL="${aws_api_gateway_stage.this.invoke_url}/templates"
+    VITE_MODIFY_API_URL="${aws_api_gateway_stage.this.invoke_url}/modify"
+    VITE_DOWNLOAD_API_URL="${aws_api_gateway_stage.this.invoke_url}/download"
+    VITE_PREVIEW_API_URL="${aws_api_gateway_stage.this.invoke_url}/preview"
+  EOT
 }
 

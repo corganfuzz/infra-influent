@@ -8,3 +8,9 @@ variable "cors_allowed_origins" {
   type        = list(string)
   default     = ["*"]
 }
+
+variable "frontend_env_path" {
+  description = "Optional path to the frontend .env.local file for automatic synchronization"
+  type        = string
+  default     = null
+}

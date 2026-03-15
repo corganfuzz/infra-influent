@@ -44,7 +44,9 @@ locals {
   # ==============================================
   api_gateways = {
     "pptx-modifier" = {
-      lambda_key = "pptx-modifier"
+      lambda_key        = "pptx-modifier"
+      frontend_env_path = "../../../influentx/.env.local"
+      cors_allowed_origins = ["https://cirtep.sharepoint.com"]
     }
   }
 }

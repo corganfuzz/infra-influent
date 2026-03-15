@@ -2,7 +2,7 @@ import logging
 import json
 from botocore.exceptions import ClientError
 from fastapi import FastAPI, HTTPException, Query, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 from token_utils import mint_token, verify_token
@@ -19,15 +19,10 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://*.sharepoint.com"],
+    allow_origin_regex=r"https://.*\.sharepoint\.com",
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "X-Api-Key"],
 )
-
-PPTX_CONTENT_TYPE = (
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-)
-
 
 @app.get("/templates")
 def get_templates():
@@ -38,7 +33,6 @@ def get_templates():
         template["token"] = mint_token(template["fileName"])
 
     return Response(content=json.dumps(templates), media_type="application/json")
-
 
 @app.post("/modify")
 def post_modify(request: ModifyRequest):
@@ -75,21 +69,15 @@ def get_download(fileName: str = Query(...)):
     return Response(content=json.dumps(data), media_type="application/json")
 
 
-@app.get("/preview")
+@app.api_route("/preview", methods=["GET", "HEAD"])
 def get_preview(token: str = Query(...)):
     file_name = verify_token(token)
 
     logger.info(f"Previewing PPTX: {file_name}")
 
     try:
-        return StreamingResponse(
-            s3.stream_pptx(file_name),
-            media_type=PPTX_CONTENT_TYPE,
-            headers={
-                "Content-Disposition": f'inline; filename="{file_name.split("/")[-1]}"',
-                "Cache-Control": "private, max-age=300",
-            },
-        )
+        presigned = s3.source_presigned_url(file_name, expiration=300)
+        return RedirectResponse(url=presigned)
     except ClientError as e:
         if e.response["Error"]["Code"] == "NoSuchKey":
             raise HTTPException(
